@@ -1,0 +1,1473 @@
+{
+	"openapi": "3.0.3",
+	"info": {
+		"title": "NeoMinds Live API",
+		"description": "Backend API for NeoMinds Live community event registration platform. Covers public event discovery, registration self-service (with secure manage tokens), feedback submission, and admin management of events and registrations.",
+		"version": "1.0.0"
+	},
+	"servers": [
+		{
+			"url": "http://localhost:3000",
+			"description": "Local development"
+		}
+	],
+	"tags": [
+		{ "name": "Health", "description": "Service health checks" },
+		{ "name": "Registration", "description": "Public registration self-service (manage token)" },
+		{ "name": "Events", "description": "Event discovery (public) and management (admin)" },
+		{ "name": "Admin", "description": "Authentication, admin creation, registration management" },
+		{ "name": "Feedback", "description": "Feedback submission (public) and reading (admin)" }
+	],
+	"security": [],
+	"paths": {
+		"/health": {
+			"get": {
+				"tags": ["Health"],
+				"summary": "Health check",
+				"description": "Returns service liveness status.",
+				"security": [],
+				"responses": {
+					"200": {
+						"description": "Service is healthy",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"status": { "type": "string", "example": "ok" }
+									},
+									"required": ["status"]
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/user/event": {
+			"post": {
+				"tags": ["Registration"],
+				"summary": "Register for an event",
+				"description": "Creates a registration without an account. Returns the plaintext manage token **exactly once** — store it securely; only its SHA-256 hash is persisted. Duplicate ACTIVE registrations for the same email + event are rejected (409). Registration is closed once the event has ended.",
+				"security": [],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/CreateRegistrationRequest" },
+							"example": {
+								"name": "Jane Doe",
+								"email": "jane@example.com",
+								"phone": "+2348012345678",
+								"eventId": "3f1a8c2e-1b4d-4e6a-9c0f-2d3e4f5a6b7c"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Registration created",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/RegistrationCreatedResponse" },
+								"example": {
+									"registration": {
+										"id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+										"name": "Jane Doe",
+										"email": "jane@example.com",
+										"phone": "+2348012345678",
+										"status": "ACTIVE",
+										"eventId": "3f1a8c2e-1b4d-4e6a-9c0f-2d3e4f5a6b7c",
+										"createdAt": "2026-11-07T12:00:00.000Z"
+									},
+									"manageToken": "R7vK2mQ9pLxN4wYb1cJ6hF0sD3gU8tA5nE2iO7zXqM="
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Validation error or registration closed",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" },
+								"examples": {
+									"validation": {
+										"value": {
+											"message": "Invalid request",
+											"errors": [{ "field": "email", "message": "Invalid email address" }]
+										}
+									},
+									"closed": {
+										"value": { "message": "Registration is closed for this event" }
+									}
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "Event not found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Event not found" }
+							}
+						}
+					},
+					"409": {
+						"description": "Duplicate ACTIVE registration",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "A registration with this email already exists for this event" }
+							}
+						}
+					}
+				}
+			},
+			"patch": {
+				"tags": ["Registration"],
+				"summary": "Update registration",
+				"description": "Updates name, email, and/or phone using the manage token from registration. At least one field must be provided. Changing email re-checks ACTIVE duplicates for the same event.",
+				"security": [{ "manageToken": [] }],
+				"parameters": [
+					{
+						"name": "X-Manage-Token",
+						"in": "header",
+						"required": true,
+						"description": "Manage token returned by POST /user/event",
+						"schema": { "type": "string", "minLength": 32 }
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/UpdateRegistrationRequest" },
+							"example": {
+								"name": "Jane Updated",
+								"phone": "+2348111111111"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Registration updated",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Registration" },
+								"example": {
+									"id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+									"name": "Jane Updated",
+									"email": "jane@example.com",
+									"phone": "+2348111111111",
+									"status": "ACTIVE",
+									"updatedAt": "2026-11-07T13:00:00.000Z"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Validation error or no fields to update",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" },
+								"examples": {
+									"validation": {
+										"value": {
+											"message": "Invalid request",
+											"errors": [{ "field": "email", "message": "Invalid email address" }]
+										}
+									},
+									"empty": {
+										"value": { "message": "No fields to update" }
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Manage token header missing",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Manage token required" }
+							}
+						}
+					},
+					"404": {
+						"description": "Registration not found for token",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Registration not found" }
+							}
+						}
+					},
+					"409": {
+						"description": "Email collides with another ACTIVE registration",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "A registration with this email already exists for this event" }
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"tags": ["Registration"],
+				"summary": "Cancel registration",
+				"description": "Soft-cancels the registration (status → CANCELLED). Idempotent: a second call returns 200 with a message. Cancelling frees the email so the user can re-register for the same event.",
+				"security": [{ "manageToken": [] }],
+				"parameters": [
+					{
+						"name": "X-Manage-Token",
+						"in": "header",
+						"required": true,
+						"description": "Manage token returned by POST /user/event",
+						"schema": { "type": "string", "minLength": 32 }
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Registration cancelled (empty body)"
+					},
+					"200": {
+						"description": "Already cancelled (idempotent)",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Registration is already cancelled" }
+							}
+						}
+					},
+					"401": {
+						"description": "Manage token header missing",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Manage token required" }
+							}
+						}
+					},
+					"404": {
+						"description": "Registration not found for token",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Registration not found" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/user/event/{manageToken}": {
+			"get": {
+				"tags": ["Registration"],
+				"summary": "Get registration by manage token",
+				"description": "Returns the registration and its event. Cancelled registrations are returned with status CANCELLED (HTTP 200), not 404.",
+				"security": [],
+				"parameters": [
+					{
+						"name": "manageToken",
+						"in": "path",
+						"required": true,
+						"description": "Plaintext manage token (min 32 chars)",
+						"schema": { "type": "string", "minLength": 32 }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Registration found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/RegistrationWithEvent" },
+								"example": {
+									"id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+									"name": "Jane Doe",
+									"email": "jane@example.com",
+									"phone": "+2348012345678",
+									"status": "ACTIVE",
+									"createdAt": "2026-11-07T12:00:00.000Z",
+									"updatedAt": "2026-11-07T12:00:00.000Z",
+									"event": {
+										"id": "3f1a8c2e-1b4d-4e6a-9c0f-2d3e4f5a6b7c",
+										"title": "NeoMinds Live #12",
+										"startTime": "2026-11-15T14:00:00.000Z",
+										"endTime": "2026-11-15T16:00:00.000Z",
+										"imageUrl": "https://example.com/banner.jpg",
+										"eventLink": "https://youtube.com/watch?v=abc123",
+										"replayUrl": null,
+										"status": "upcoming"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Token too short (min 32 chars)",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" },
+								"example": {
+									"message": "Invalid request",
+									"errors": [{ "field": "manageToken", "message": "Invalid manage token" }]
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "No registration matches token hash",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Registration not found" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/events": {
+			"get": {
+				"tags": ["Events"],
+				"summary": "List all events",
+				"description": "Returns all events ordered by startTime ascending, each with a computed status.",
+				"security": [],
+				"responses": {
+					"200": {
+						"description": "Array of events (empty array if none)",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": { "$ref": "#/components/schemas/Event" }
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"tags": ["Events"],
+				"summary": "Create event",
+				"description": "Creates an event. Requires admin authentication (SUPER_ADMIN or ADMIN). startTime must be before endTime. eventLink must be unique; startTime must not collide with another event.",
+				"security": [{ "bearerAuth": [] }],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/CreateEventRequest" },
+							"example": {
+								"title": "NeoMinds Live #13",
+								"startTime": "2026-12-01T14:00:00.000Z",
+								"endTime": "2026-12-01T16:00:00.000Z",
+								"eventLink": "https://youtube.com/watch?v=live13",
+								"imageUrl": "https://example.com/live13.jpg",
+								"replayUrl": "https://youtube.com/watch?v=replay13"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Event created",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Event" }
+							}
+						}
+					},
+					"400": {
+						"description": "Validation error or invalid event times",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" },
+								"examples": {
+									"validation": {
+										"value": {
+											"message": "Invalid request",
+											"errors": [{ "field": "title", "message": "Title must be at least 2 characters" }]
+										}
+									},
+									"times": {
+										"value": { "message": "Invalid event times" }
+									}
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Missing or invalid JWT",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"examples": {
+									"missing": { "value": { "message": "Authentication required" } },
+									"invalid": { "value": { "message": "Invalid or expired token" } }
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "Role not permitted",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "You don't have permission to perform this action" }
+							}
+						}
+					},
+					"409": {
+						"description": "Duplicate eventLink or startTime",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Event already exists or conflicts with another" }
+							}
+						}
+					}
+				}
+			},
+			"patch": {
+				"tags": ["Events"],
+				"summary": "Update event",
+				"description": "Partial update of an event. Only provided fields are written. Omit replayUrl to leave unchanged; send null to clear it. Effective start/end times must remain ordered.",
+				"security": [{ "bearerAuth": [] }],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/UpdateEventRequest" },
+							"example": {
+								"id": "3f1a8c2e-1b4d-4e6a-9c0f-2d3e4f5a6b7c",
+								"title": "NeoMinds Live #12 (Updated)"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Event updated",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Event" }
+							}
+						}
+					},
+					"400": {
+						"description": "Validation error or invalid event times",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"401": {
+						"description": "Missing or invalid JWT",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"403": {
+						"description": "Role not permitted",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"404": {
+						"description": "Event not found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Event doesn't exist" }
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"tags": ["Events"],
+				"summary": "Delete event",
+				"description": "Hard-deletes an event. The event id is sent in the JSON body (not the path).",
+				"security": [{ "bearerAuth": [] }],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"id": { "type": "string", "format": "uuid", "description": "Event id" }
+								},
+								"required": ["id"]
+							},
+							"example": { "id": "3f1a8c2e-1b4d-4e6a-9c0f-2d3e4f5a6b7c" }
+						}
+					}
+				},
+				"responses": {
+					"204": { "description": "Event deleted (empty body)" },
+					"400": {
+						"description": "Validation error",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"401": {
+						"description": "Missing or invalid JWT",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"403": {
+						"description": "Role not permitted",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"404": {
+						"description": "Event not found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Event doesn't exist" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/events/latest": {
+			"get": {
+				"tags": ["Events"],
+				"summary": "Get latest non-ended event",
+				"description": "Returns the earliest-starting event whose endTime is in the future (upcoming or live).",
+				"security": [],
+				"responses": {
+					"200": {
+						"description": "Event found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Event" }
+							}
+						}
+					},
+					"404": {
+						"description": "No upcoming event",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "No upcoming event" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/events/previous": {
+			"get": {
+				"tags": ["Events"],
+				"summary": "List previous (ended) events",
+				"description": "Returns ended events ordered by endTime descending. Useful for the replay section.",
+				"security": [],
+				"parameters": [
+					{
+						"name": "limit",
+						"in": "query",
+						"required": false,
+						"description": "Max events to return",
+						"schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Array of ended events (empty array if none)",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": { "$ref": "#/components/schemas/Event" }
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid limit",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" },
+								"example": {
+									"message": "Invalid request",
+									"errors": [{ "field": "limit", "message": "Number must be less than or equal to 50" }]
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/events/{id}": {
+			"get": {
+				"tags": ["Events"],
+				"summary": "Get event by id",
+				"security": [],
+				"parameters": [
+					{
+						"name": "id",
+						"in": "path",
+						"required": true,
+						"schema": { "type": "string", "format": "uuid" }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Event found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Event" }
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid event id",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"404": {
+						"description": "Event not found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Event doesn't exist" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/admin/login": {
+			"post": {
+				"tags": ["Admin"],
+				"summary": "Admin login",
+				"description": "Authenticates an admin and returns a JWT (HS256, 15 minutes). Unknown email and wrong password return the same 401 message.",
+				"security": [],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/LoginRequest" },
+							"example": {
+								"email": "admin@neominds.live",
+								"password": "ChangeMe123!"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Login successful",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/LoginResponse" },
+								"example": {
+									"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+									"admin": {
+										"id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+										"name": "Super Admin",
+										"email": "admin@neominds.live",
+										"role": "SUPER_ADMIN"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Validation error",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid credentials",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Invalid email or password" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/admin/admins": {
+			"post": {
+				"tags": ["Admin"],
+				"summary": "Create admin (SUPER_ADMIN only)",
+				"description": "Creates a normal admin account. Restricted to SUPER_ADMIN; ADMIN role receives 403. The role field only accepts \"ADMIN\" — super admins cannot mint other super admins. Password is bcrypt-hashed (cost 12) and never returned.",
+				"security": [{ "bearerAuth": [] }],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/CreateAdminRequest" },
+							"example": {
+								"name": "Ops Admin",
+								"email": "ops@neominds.live",
+								"password": "password123",
+								"role": "ADMIN"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Admin created",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/AdminPublic" },
+								"example": {
+									"id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+									"name": "Ops Admin",
+									"email": "ops@neominds.live",
+									"role": "ADMIN"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Validation error (weak password, bad role, etc.)",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"401": {
+						"description": "Missing or invalid JWT",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"403": {
+						"description": "Not a SUPER_ADMIN",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "You don't have permission to perform this action" }
+							}
+						}
+					},
+					"409": {
+						"description": "Admin email already exists",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "An admin with this email already exists" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/admin/registrations": {
+			"get": {
+				"tags": ["Admin"],
+				"summary": "List registrations (paginated, filterable)",
+				"description": "Returns ACTIVE/CANCELLED registrations with optional filters. manageTokenHash is never included.",
+				"security": [{ "bearerAuth": [] }],
+				"parameters": [
+					{
+						"name": "page",
+						"in": "query",
+						"required": false,
+						"schema": { "type": "integer", "minimum": 1, "default": 1 }
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"required": false,
+						"schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+					},
+					{
+						"name": "status",
+						"in": "query",
+						"required": false,
+						"schema": { "$ref": "#/components/schemas/RegistrationStatus" }
+					},
+					{
+						"name": "eventId",
+						"in": "query",
+						"required": false,
+						"schema": { "type": "string", "format": "uuid" }
+					},
+					{
+						"name": "q",
+						"in": "query",
+						"required": false,
+						"description": "Case-insensitive search on name OR email (1–200 chars)",
+						"schema": { "type": "string", "minLength": 1, "maxLength": 200 }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Paginated registrations",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/RegistrationListResponse" },
+								"example": {
+									"items": [
+										{
+											"id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+											"name": "Jane Doe",
+											"email": "jane@example.com",
+											"phone": "+2348012345678",
+											"status": "ACTIVE",
+											"eventId": "3f1a8c2e-1b4d-4e6a-9c0f-2d3e4f5a6b7c",
+											"createdAt": "2026-11-07T12:00:00.000Z",
+											"updatedAt": "2026-11-07T12:00:00.000Z",
+											"event": {
+												"id": "3f1a8c2e-1b4d-4e6a-9c0f-2d3e4f5a6b7c",
+												"title": "NeoMinds Live #12",
+												"startTime": "2026-11-15T14:00:00.000Z",
+												"endTime": "2026-11-15T16:00:00.000Z"
+											}
+										}
+									],
+									"total": 1,
+									"page": 1,
+									"limit": 20
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid query parameters",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"401": {
+						"description": "Missing or invalid JWT",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"403": {
+						"description": "Role not permitted",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/admin/registrations/export": {
+			"get": {
+				"tags": ["Admin"],
+				"summary": "Export registrations as CSV",
+				"description": "Downloads a CSV of matching registrations (all pages — page/limit are accepted but ignored). Headers: id,name,email,phone,status,eventId,eventTitle,eventStartTime,eventEndTime,createdAt,updatedAt.",
+				"security": [{ "bearerAuth": [] }],
+				"parameters": [
+					{
+						"name": "status",
+						"in": "query",
+						"required": false,
+						"schema": { "$ref": "#/components/schemas/RegistrationStatus" }
+					},
+					{
+						"name": "eventId",
+						"in": "query",
+						"required": false,
+						"schema": { "type": "string", "format": "uuid" }
+					},
+					{
+						"name": "q",
+						"in": "query",
+						"required": false,
+						"description": "Case-insensitive search on name OR email",
+						"schema": { "type": "string", "minLength": 1, "maxLength": 200 }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "CSV file",
+						"content": {
+							"text/csv": {
+								"schema": { "type": "string" },
+								"example": "id,name,email,phone,status,eventId,eventTitle,eventStartTime,eventEndTime,createdAt,updatedAt\r\na1b2...,Jane Doe,jane@example.com,+2348012345678,ACTIVE,3f1a...,NeoMinds Live #12,2026-11-15T14:00:00.000Z,2026-11-15T16:00:00.000Z,..."
+							}
+						},
+						"headers": {
+							"Content-Disposition": {
+								"description": "Attachment filename",
+								"schema": { "type": "string" },
+								"example": "attachment; filename=\"registrations.csv\""
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid query parameters",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"401": {
+						"description": "Missing or invalid JWT",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"403": {
+						"description": "Role not permitted",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/admin/registrations/{id}": {
+			"get": {
+				"tags": ["Admin"],
+				"summary": "Get registration by id",
+				"description": "Returns the full registration (minus manageTokenHash) with nested event and feedback array. The nested event does not include computed status on this endpoint.",
+				"security": [{ "bearerAuth": [] }],
+				"parameters": [
+					{
+						"name": "id",
+						"in": "path",
+						"required": true,
+						"schema": { "type": "string", "format": "uuid" }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Registration found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/RegistrationDetail" }
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid registration id",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"401": {
+						"description": "Missing or invalid JWT",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"403": {
+						"description": "Role not permitted",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"404": {
+						"description": "Registration not found",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Registration not found" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/feedback": {
+			"post": {
+				"tags": ["Feedback"],
+				"summary": "Submit feedback",
+				"description": "Submits feedback for a registration on an event. The registration must belong to the event. One feedback row per (registrationId, eventId).",
+				"security": [],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/CreateFeedbackRequest" },
+							"example": {
+								"eventId": "3f1a8c2e-1b4d-4e6a-9c0f-2d3e4f5a6b7c",
+								"registrationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+								"rating": 5,
+								"conversationValue": "VERY_VALUABLE",
+								"usefulPart": "The live coding section",
+								"futureImprovements": "More Q&A time",
+								"recommendedTopics": "Advanced TypeScript",
+								"attendance": "DEFINITELY",
+								"volunteer": "YES"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Feedback created",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"id": { "type": "string", "format": "uuid" }
+									},
+									"required": ["id"]
+								},
+								"example": { "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a" }
+							}
+						}
+					},
+					"400": {
+						"description": "Validation error",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"404": {
+						"description": "Event not found, or registration not found for this event",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"examples": {
+									"event": { "value": { "message": "Event not found" } },
+									"registration": { "value": { "message": "Registration not found for this event" } }
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "Feedback already submitted",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" },
+								"example": { "message": "Feedback already submitted" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/feedback/{eventId}": {
+			"get": {
+				"tags": ["Feedback"],
+				"summary": "List feedback for an event (admin)",
+				"description": "Returns all feedback rows for an event, newest first. An unknown-but-valid uuid returns an empty array (not 404).",
+				"security": [{ "bearerAuth": [] }],
+				"parameters": [
+					{
+						"name": "eventId",
+						"in": "path",
+						"required": true,
+						"schema": { "type": "string", "format": "uuid" }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Array of feedback (possibly empty)",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": { "$ref": "#/components/schemas/Feedback" }
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid event id",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ValidationError" }
+							}
+						}
+					},
+					"401": {
+						"description": "Missing or invalid JWT",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"403": {
+						"description": "Role not permitted",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					}
+				}
+			}
+		}
+	},
+	"components": {
+		"securitySchemes": {
+			"bearerAuth": {
+				"type": "http",
+				"scheme": "bearer",
+				"bearerFormat": "JWT",
+				"description": "Admin JWT from POST /admin/login. HS256, expires in 15 minutes. Send as `Authorization: Bearer <token>`."
+			},
+			"manageToken": {
+				"type": "apiKey",
+				"in": "header",
+				"name": "X-Manage-Token",
+				"description": "Plaintext manage token returned once by POST /user/event. Only its SHA-256 hash is stored server-side."
+			}
+		},
+		"schemas": {
+			"Error": {
+				"type": "object",
+				"properties": {
+					"message": { "type": "string" }
+				},
+				"required": ["message"]
+			},
+			"ValidationError": {
+				"type": "object",
+				"properties": {
+					"message": { "type": "string", "example": "Invalid request" },
+					"errors": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"field": { "type": "string", "example": "email" },
+								"message": { "type": "string", "example": "Invalid email address" }
+							},
+							"required": ["field", "message"]
+						}
+					}
+				},
+				"required": ["message", "errors"]
+			},
+			"RegistrationStatus": {
+				"type": "string",
+				"enum": ["ACTIVE", "CANCELLED"]
+			},
+			"AdminRole": {
+				"type": "string",
+				"enum": ["SUPER_ADMIN", "ADMIN"]
+			},
+			"EventStatus": {
+				"type": "string",
+				"enum": ["upcoming", "live", "ended"],
+				"description": "Computed: now < startTime → upcoming; now < endTime → live; else ended."
+			},
+			"Event": {
+				"type": "object",
+				"properties": {
+					"id": { "type": "string", "format": "uuid" },
+					"title": { "type": "string" },
+					"startTime": { "type": "string", "format": "date-time" },
+					"endTime": { "type": "string", "format": "date-time" },
+					"imageUrl": { "type": "string", "format": "uri" },
+					"eventLink": { "type": "string", "format": "uri", "description": "Unique YouTube/live link" },
+					"replayUrl": { "type": "string", "format": "uri", "nullable": true },
+					"createdAt": { "type": "string", "format": "date-time" },
+					"updatedAt": { "type": "string", "format": "date-time" },
+					"status": { "$ref": "#/components/schemas/EventStatus" }
+				},
+				"required": ["id", "title", "startTime", "endTime", "imageUrl", "eventLink", "status"]
+			},
+			"CreateEventRequest": {
+				"type": "object",
+				"properties": {
+					"title": { "type": "string", "minLength": 2 },
+					"startTime": { "type": "string", "format": "date-time", "description": "ISO 8601 with offset" },
+					"endTime": { "type": "string", "format": "date-time", "description": "Must be after startTime" },
+					"eventLink": { "type": "string", "format": "uri" },
+					"imageUrl": { "type": "string", "format": "uri" },
+					"replayUrl": { "type": "string", "format": "uri" }
+				},
+				"required": ["title", "startTime", "endTime", "eventLink", "imageUrl"]
+			},
+			"UpdateEventRequest": {
+				"type": "object",
+				"properties": {
+					"id": { "type": "string", "format": "uuid" },
+					"title": { "type": "string", "minLength": 2 },
+					"startTime": { "type": "string", "format": "date-time" },
+					"endTime": { "type": "string", "format": "date-time" },
+					"eventLink": { "type": "string", "format": "uri" },
+					"imageUrl": { "type": "string", "format": "uri" },
+					"replayUrl": { "type": "string", "format": "uri", "nullable": true, "description": "Send null to clear; omit to leave unchanged" }
+				},
+				"required": ["id"]
+			},
+			"Registration": {
+				"type": "object",
+				"properties": {
+					"id": { "type": "string", "format": "uuid" },
+					"name": { "type": "string" },
+					"email": { "type": "string", "format": "email" },
+					"phone": { "type": "string", "nullable": true },
+					"status": { "$ref": "#/components/schemas/RegistrationStatus" },
+					"eventId": { "type": "string", "format": "uuid" },
+					"createdAt": { "type": "string", "format": "date-time" },
+					"updatedAt": { "type": "string", "format": "date-time" }
+				},
+				"required": ["id", "name", "email", "status", "eventId"]
+			},
+			"CreateRegistrationRequest": {
+				"type": "object",
+				"properties": {
+					"name": { "type": "string", "minLength": 2 },
+					"email": { "type": "string", "format": "email" },
+					"phone": { "type": "string", "minLength": 7, "maxLength": 20, "description": "Optional; stored as null when omitted" },
+					"eventId": { "type": "string", "format": "uuid" }
+				},
+				"required": ["name", "email", "eventId"]
+			},
+			"UpdateRegistrationRequest": {
+				"type": "object",
+				"properties": {
+					"name": { "type": "string", "minLength": 2 },
+					"email": { "type": "string", "format": "email" },
+					"phone": { "type": "string", "minLength": 7, "maxLength": 20 }
+				},
+				"description": "All fields optional; at least one must be provided."
+			},
+			"RegistrationCreatedResponse": {
+				"type": "object",
+				"properties": {
+					"registration": {
+						"type": "object",
+						"properties": {
+							"id": { "type": "string", "format": "uuid" },
+							"name": { "type": "string" },
+							"email": { "type": "string", "format": "email" },
+							"phone": { "type": "string", "nullable": true },
+							"status": { "$ref": "#/components/schemas/RegistrationStatus" },
+							"eventId": { "type": "string", "format": "uuid" },
+							"createdAt": { "type": "string", "format": "date-time" }
+						}
+					},
+					"manageToken": {
+						"type": "string",
+						"description": "Plaintext token — returned exactly once. Store securely; it cannot be recovered."
+					}
+				},
+				"required": ["registration", "manageToken"]
+			},
+			"RegistrationWithEvent": {
+				"type": "object",
+				"properties": {
+					"id": { "type": "string", "format": "uuid" },
+					"name": { "type": "string" },
+					"email": { "type": "string", "format": "email" },
+					"phone": { "type": "string", "nullable": true },
+					"status": { "$ref": "#/components/schemas/RegistrationStatus" },
+					"createdAt": { "type": "string", "format": "date-time" },
+					"updatedAt": { "type": "string", "format": "date-time" },
+					"event": {
+						"type": "object",
+						"properties": {
+							"id": { "type": "string", "format": "uuid" },
+							"title": { "type": "string" },
+							"startTime": { "type": "string", "format": "date-time" },
+							"endTime": { "type": "string", "format": "date-time" },
+							"imageUrl": { "type": "string", "format": "uri" },
+							"eventLink": { "type": "string", "format": "uri" },
+							"replayUrl": { "type": "string", "format": "uri", "nullable": true },
+							"status": { "$ref": "#/components/schemas/EventStatus" }
+						}
+					}
+				},
+				"required": ["id", "name", "email", "status", "event"]
+			},
+			"RegistrationListResponse": {
+				"type": "object",
+				"properties": {
+					"items": {
+						"type": "array",
+						"items": {
+							"allOf": [
+								{ "$ref": "#/components/schemas/Registration" },
+								{
+									"type": "object",
+									"properties": {
+										"event": {
+											"type": "object",
+											"properties": {
+												"id": { "type": "string", "format": "uuid" },
+												"title": { "type": "string" },
+												"startTime": { "type": "string", "format": "date-time" },
+												"endTime": { "type": "string", "format": "date-time" }
+											}
+										}
+									}
+								}
+							]
+						}
+					},
+					"total": { "type": "integer" },
+					"page": { "type": "integer" },
+					"limit": { "type": "integer" }
+				},
+				"required": ["items", "total", "page", "limit"]
+			},
+			"RegistrationDetail": {
+				"type": "object",
+				"properties": {
+					"id": { "type": "string", "format": "uuid" },
+					"name": { "type": "string" },
+					"email": { "type": "string", "format": "email" },
+					"phone": { "type": "string", "nullable": true },
+					"status": { "$ref": "#/components/schemas/RegistrationStatus" },
+					"eventId": { "type": "string", "format": "uuid" },
+					"createdAt": { "type": "string", "format": "date-time" },
+					"updatedAt": { "type": "string", "format": "date-time" },
+					"event": { "$ref": "#/components/schemas/EventWithoutStatus" },
+					"feedback": {
+						"type": "array",
+						"items": { "$ref": "#/components/schemas/Feedback" }
+					}
+				}
+			},
+			"EventWithoutStatus": {
+				"type": "object",
+				"description": "Full Events row without computed status",
+				"properties": {
+					"id": { "type": "string", "format": "uuid" },
+					"title": { "type": "string" },
+					"startTime": { "type": "string", "format": "date-time" },
+					"endTime": { "type": "string", "format": "date-time" },
+					"imageUrl": { "type": "string", "format": "uri" },
+					"eventLink": { "type": "string", "format": "uri" },
+					"replayUrl": { "type": "string", "format": "uri", "nullable": true },
+					"createdAt": { "type": "string", "format": "date-time" },
+					"updatedAt": { "type": "string", "format": "date-time" }
+				}
+			},
+			"LoginRequest": {
+				"type": "object",
+				"properties": {
+					"email": { "type": "string", "format": "email" },
+					"password": { "type": "string", "minLength": 1 }
+				},
+				"required": ["email", "password"]
+			},
+			"LoginResponse": {
+				"type": "object",
+				"properties": {
+					"token": { "type": "string", "description": "JWT, HS256, 15-minute expiry" },
+					"admin": { "$ref": "#/components/schemas/AdminPublic" }
+				},
+				"required": ["token", "admin"]
+			},
+			"AdminPublic": {
+				"type": "object",
+				"properties": {
+					"id": { "type": "string", "format": "uuid" },
+					"name": { "type": "string" },
+					"email": { "type": "string", "format": "email" },
+					"role": { "$ref": "#/components/schemas/AdminRole" }
+				},
+				"required": ["id", "name", "email", "role"]
+			},
+			"CreateAdminRequest": {
+				"type": "object",
+				"properties": {
+					"name": { "type": "string", "minLength": 2 },
+					"email": { "type": "string", "format": "email" },
+					"password": { "type": "string", "minLength": 8 },
+					"role": {
+						"type": "string",
+						"enum": ["ADMIN"],
+						"default": "ADMIN",
+						"description": "Only ADMIN is accepted — super admins cannot create other super admins."
+					}
+				},
+				"required": ["name", "email", "password"]
+			},
+			"CreateFeedbackRequest": {
+				"type": "object",
+				"properties": {
+					"eventId": { "type": "string", "format": "uuid" },
+					"registrationId": { "type": "string", "format": "uuid" },
+					"rating": { "type": "integer", "minimum": 1, "maximum": 5 },
+					"conversationValue": { "$ref": "#/components/schemas/ConversationValueEnum" },
+					"usefulPart": { "type": "string", "minLength": 1, "maxLength": 2000 },
+					"futureImprovements": { "type": "string", "minLength": 1, "maxLength": 2000 },
+					"recommendedTopics": { "type": "string", "minLength": 1, "maxLength": 2000 },
+					"attendance": { "$ref": "#/components/schemas/AttendanceEnum" },
+					"volunteer": { "$ref": "#/components/schemas/VolunteerEnum" }
+				},
+				"required": ["eventId", "registrationId", "rating", "conversationValue", "usefulPart", "futureImprovements", "recommendedTopics", "attendance", "volunteer"]
+			},
+			"Feedback": {
+				"type": "object",
+				"properties": {
+					"id": { "type": "string", "format": "uuid" },
+					"rating": { "type": "integer" },
+					"conversationValue": { "$ref": "#/components/schemas/ConversationValueEnum" },
+					"usefulPart": { "type": "string" },
+					"futureImprovements": { "type": "string" },
+					"recommendedTopics": { "type": "string" },
+					"attendance": { "$ref": "#/components/schemas/AttendanceEnum" },
+					"volunteer": { "$ref": "#/components/schemas/VolunteerEnum" },
+					"eventId": { "type": "string", "format": "uuid" },
+					"registrationId": { "type": "string", "format": "uuid" }
+				},
+				"required": ["id", "rating", "conversationValue", "usefulPart", "futureImprovements", "recommendedTopics", "attendance", "volunteer", "eventId", "registrationId"]
+			},
+			"ConversationValueEnum": {
+				"type": "string",
+				"enum": ["VERY_VALUABLE", "VALUABLE", "SOMEWHAT_VALUABLE", "NOT_VERY_VALUABLE", "NOT_VALUABLE_AT_ALL"]
+			},
+			"AttendanceEnum": {
+				"type": "string",
+				"enum": ["DEFINITELY", "PROBABLY", "NOT_SURE", "PROBABLY_NOT"]
+			},
+			"VolunteerEnum": {
+				"type": "string",
+				"enum": ["YES", "NO"]
+			}
+		}
+	}
+}

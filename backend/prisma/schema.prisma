@@ -1,0 +1,99 @@
+// This is your Prisma schema file,
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Events {
+  id  String @id @default(uuid())
+  title String
+  startTime DateTime
+  endTime DateTime
+  imageUrl String
+  eventLink String @unique
+  replayUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  registrations  Registrations[]
+  feedback  Feedback[]
+}
+
+
+model Registrations{
+  id  String @id @default(uuid())
+  name String
+  email String
+  phone String?
+  status RegistrationStatus @default(ACTIVE)
+  manageTokenHash String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  eventId String
+  event Events @relation(fields: [eventId], references: [id])
+  feedback  Feedback[]
+
+  @@index([eventId, status])
+  @@index([email])
+}
+
+enum RegistrationStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+}
+
+model Admin{
+  id String @id @default(uuid())
+  name String
+  email String @unique
+  password String
+  role AdminRole @default(ADMIN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum ConversationValueEnum {
+  VERY_VALUABLE
+  VALUABLE
+  SOMEWHAT_VALUABLE
+  NOT_VERY_VALUABLE
+  NOT_VALUABLE_AT_ALL
+}
+
+enum AttendanceEnum {
+  DEFINITELY
+  PROBABLY
+  NOT_SURE
+  PROBABLY_NOT
+}
+
+enum VolunteerEnum {
+  YES
+  NO
+}
+
+model Feedback{
+  id String @id @default(uuid())
+  rating Int
+  conversationValue ConversationValueEnum
+  usefulPart String
+  futureImprovements String
+  recommendedTopics String
+  attendance AttendanceEnum
+  volunteer VolunteerEnum
+  eventId String
+  event Events @relation(fields: [eventId], references: [id])
+  registrationId String
+  registration Registrations @relation(fields: [registrationId], references: [id])
+
+  @@unique([registrationId, eventId])
+}

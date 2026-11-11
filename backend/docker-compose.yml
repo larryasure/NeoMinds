@@ -1,0 +1,16 @@
+services:
+  postgres:
+    container_name: neolive-db
+    image: postgres:16-alpine
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass123
+      POSTGRES_DB: neolive
+    volumes:
+      - neolive-data:/var/lib/postgresql/data
+
+volumes:
+  neolive-data:
